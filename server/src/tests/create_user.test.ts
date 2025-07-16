@@ -16,7 +16,7 @@ describe('createUser', () => {
   beforeEach(createDB);
   afterEach(resetDB);
 
-  it('should create a user with valid input', async () => {
+  it('should create a user', async () => {
     const result = await createUser(testInput);
 
     expect(result.email).toEqual('test@example.com');
@@ -42,41 +42,43 @@ describe('createUser', () => {
     expect(users[0].updated_at).toBeInstanceOf(Date);
   });
 
-  it('should hash the password correctly', async () => {
+  it('should hash the password', async () => {
     const result = await createUser(testInput);
 
-    // Verify password is hashed with bcrypt
-    const isValidPassword = await Bun.password.verify('password123', result.password_hash);
-    expect(isValidPassword).toBe(true);
+    // Verify password is hashed using Bun's password verification
+    const isValid = await Bun.password.verify('password123', result.password_hash);
+    expect(isValid).toBe(true);
 
     // Verify wrong password fails
-    const isWrongPassword = await Bun.password.verify('wrongpassword', result.password_hash);
-    expect(isWrongPassword).toBe(false);
+    const isInvalid = await Bun.password.verify('wrongpassword', result.password_hash);
+    expect(isInvalid).toBe(false);
   });
 
-  it('should throw error for duplicate email', async () => {
+  it('should reject duplicate emails', async () => {
     await createUser(testInput);
 
+    // Try to create another user with the same email
     await expect(createUser(testInput)).rejects.toThrow(/already exists/i);
   });
 
-  it('should create multiple users with different emails', async () => {
-    const user1 = await createUser(testInput);
-    const user2Input: CreateUserInput = {
-      email: 'user2@example.com',
-      password: 'password456'
-    };
-    const user2 = await createUser(user2Input);
+  it('should handle different email formats', async () => {
+    const inputs = [
+      { email: 'user1@domain.com', password: 'password123' },
+      { email: 'user2@different.org', password: 'password456' },
+      { email: 'user3@subdomain.example.net', password: 'password789' }
+    ];
 
-    expect(user1.email).toEqual('test@example.com');
-    expect(user2.email).toEqual('user2@example.com');
-    expect(user1.id).not.toEqual(user2.id);
+    for (const input of inputs) {
+      const result = await createUser(input);
+      expect(result.email).toEqual(input.email);
+      expect(result.id).toBeDefined();
+    }
 
-    // Verify both users exist in database
+    // Verify all users were created
     const allUsers = await db.select()
       .from(usersTable)
       .execute();
 
-    expect(allUsers).toHaveLength(2);
+    expect(allUsers).toHaveLength(3);
   });
 });

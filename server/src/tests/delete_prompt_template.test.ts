@@ -31,8 +31,8 @@ describe('deletePromptTemplate', () => {
         openai_model: 'gpt-3.5-turbo',
         trigger_type: 'webhook',
         schedule: null,
-        webhook_url: null,
-        destination_webhook_url: 'https://example.com/webhook',
+        webhook_url: 'https://example.com/webhook',
+        destination_webhook_url: 'https://example.com/destination',
         user_id: user.id
       })
       .returning()
@@ -44,13 +44,11 @@ describe('deletePromptTemplate', () => {
       id: template.id
     };
 
-    // Delete the template
     const result = await deletePromptTemplate(input);
 
-    // Should return true indicating successful deletion
     expect(result).toBe(true);
 
-    // Verify the template was deleted from database
+    // Verify the template was deleted from the database
     const templates = await db.select()
       .from(promptTemplatesTable)
       .where(eq(promptTemplatesTable.id, template.id))
@@ -59,18 +57,17 @@ describe('deletePromptTemplate', () => {
     expect(templates).toHaveLength(0);
   });
 
-  it('should return false when template does not exist', async () => {
+  it('should return false when trying to delete non-existent template', async () => {
     const input: DeletePromptTemplateInput = {
-      id: 999 // Non-existent ID
+      id: 999999 // Non-existent ID
     };
 
     const result = await deletePromptTemplate(input);
 
-    // Should return false indicating no record was deleted
     expect(result).toBe(false);
   });
 
-  it('should handle multiple templates correctly', async () => {
+  it('should not affect other templates when deleting one', async () => {
     // Create a user first
     const userResult = await db.insert(usersTable)
       .values({
@@ -90,8 +87,8 @@ describe('deletePromptTemplate', () => {
         openai_model: 'gpt-3.5-turbo',
         trigger_type: 'webhook',
         schedule: null,
-        webhook_url: null,
-        destination_webhook_url: 'https://example.com/webhook1',
+        webhook_url: 'https://example.com/webhook1',
+        destination_webhook_url: 'https://example.com/destination1',
         user_id: user.id
       })
       .returning()
@@ -105,7 +102,7 @@ describe('deletePromptTemplate', () => {
         trigger_type: 'scheduled',
         schedule: { frequency: 'daily' },
         webhook_url: null,
-        destination_webhook_url: 'https://example.com/webhook2',
+        destination_webhook_url: 'https://example.com/destination2',
         user_id: user.id
       })
       .returning()
@@ -114,17 +111,30 @@ describe('deletePromptTemplate', () => {
     const template1 = template1Result[0];
     const template2 = template2Result[0];
 
-    // Delete first template
-    const result = await deletePromptTemplate({ id: template1.id });
+    // Delete the first template
+    const input: DeletePromptTemplateInput = {
+      id: template1.id
+    };
+
+    const result = await deletePromptTemplate(input);
+
     expect(result).toBe(true);
 
-    // Verify only first template was deleted
+    // Verify first template was deleted
+    const deletedTemplates = await db.select()
+      .from(promptTemplatesTable)
+      .where(eq(promptTemplatesTable.id, template1.id))
+      .execute();
+
+    expect(deletedTemplates).toHaveLength(0);
+
+    // Verify second template still exists
     const remainingTemplates = await db.select()
       .from(promptTemplatesTable)
+      .where(eq(promptTemplatesTable.id, template2.id))
       .execute();
 
     expect(remainingTemplates).toHaveLength(1);
-    expect(remainingTemplates[0].id).toBe(template2.id);
     expect(remainingTemplates[0].name).toBe('Template 2');
   });
 });

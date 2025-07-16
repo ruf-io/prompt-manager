@@ -25,12 +25,14 @@ export async function loginUser(input: LoginUserInput): Promise<AuthResponse> {
       throw new Error('Invalid email or password');
     }
 
-    // Generate JWT token using Bun's built-in JWT
-    const token = await Bun.password.hash(JSON.stringify({
+    // Generate a simple token (in production, use proper JWT library)
+    const tokenData = {
       userId: user.id,
       email: user.email,
       timestamp: Date.now()
-    }));
+    };
+    
+    const token = btoa(JSON.stringify(tokenData));
 
     return {
       user: {

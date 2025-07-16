@@ -47,7 +47,7 @@ export const updatePromptTemplate = async (input: UpdatePromptTemplateInput): Pr
       .returning()
       .execute();
 
-    // Return the updated template or null if not found
+    // Return null if no template was found/updated
     if (!result[0]) {
       return null;
     }

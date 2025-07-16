@@ -3,57 +3,37 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { resetDB, createDB } from '../helpers';
 import { db } from '../db';
 import { usersTable, promptTemplatesTable } from '../db/schema';
-import { type GetPromptTemplatesByUserInput } from '../schema';
+import { type GetPromptTemplatesByUserInput, type CreateUserInput } from '../schema';
 import { getPromptTemplatesByUser } from '../handlers/get_prompt_templates_by_user';
+import { eq } from 'drizzle-orm';
 
 describe('getPromptTemplatesByUser', () => {
   beforeEach(createDB);
   afterEach(resetDB);
 
-  it('should return empty array for user with no templates', async () => {
-    // Create a user
-    const userResult = await db.insert(usersTable)
+  it('should get all prompt templates for a user', async () => {
+    // Create test user
+    const testUser = await db.insert(usersTable)
       .values({
         email: 'test@example.com',
-        password_hash: 'hashedpassword'
+        password_hash: 'hashedpassword123'
       })
       .returning()
       .execute();
 
-    const user = userResult[0];
+    const userId = testUser[0].id;
 
-    const input: GetPromptTemplatesByUserInput = {
-      user_id: user.id
-    };
-
-    const result = await getPromptTemplatesByUser(input);
-
-    expect(result).toEqual([]);
-  });
-
-  it('should return all templates for a user', async () => {
-    // Create a user
-    const userResult = await db.insert(usersTable)
-      .values({
-        email: 'test@example.com',
-        password_hash: 'hashedpassword'
-      })
-      .returning()
-      .execute();
-
-    const user = userResult[0];
-
-    // Create multiple prompt templates for the user
+    // Create test prompt templates
     const template1 = await db.insert(promptTemplatesTable)
       .values({
         name: 'Template 1',
-        template_content: 'Content 1',
-        openai_model: 'gpt-3.5-turbo',
+        template_content: 'Test template content 1',
+        openai_model: 'gpt-4',
         trigger_type: 'scheduled',
         schedule: { frequency: 'daily' },
         webhook_url: null,
         destination_webhook_url: 'https://example.com/webhook1',
-        user_id: user.id
+        user_id: userId
       })
       .returning()
       .execute();
@@ -61,19 +41,19 @@ describe('getPromptTemplatesByUser', () => {
     const template2 = await db.insert(promptTemplatesTable)
       .values({
         name: 'Template 2',
-        template_content: 'Content 2',
-        openai_model: 'gpt-4',
+        template_content: 'Test template content 2',
+        openai_model: 'gpt-3.5-turbo',
         trigger_type: 'webhook',
         schedule: null,
         webhook_url: 'https://example.com/trigger',
         destination_webhook_url: 'https://example.com/webhook2',
-        user_id: user.id
+        user_id: userId
       })
       .returning()
       .execute();
 
     const input: GetPromptTemplatesByUserInput = {
-      user_id: user.id
+      user_id: userId
     };
 
     const result = await getPromptTemplatesByUser(input);
@@ -81,98 +61,165 @@ describe('getPromptTemplatesByUser', () => {
     expect(result).toHaveLength(2);
     
     // Check first template
-    const resultTemplate1 = result.find(t => t.name === 'Template 1');
-    expect(resultTemplate1).toBeDefined();
-    expect(resultTemplate1?.id).toBe(template1[0].id);
-    expect(resultTemplate1?.template_content).toBe('Content 1');
-    expect(resultTemplate1?.openai_model).toBe('gpt-3.5-turbo');
-    expect(resultTemplate1?.trigger_type).toBe('scheduled');
-    expect(resultTemplate1?.schedule).toEqual({ frequency: 'daily' });
-    expect(resultTemplate1?.webhook_url).toBeNull();
-    expect(resultTemplate1?.destination_webhook_url).toBe('https://example.com/webhook1');
-    expect(resultTemplate1?.user_id).toBe(user.id);
-    expect(resultTemplate1?.created_at).toBeInstanceOf(Date);
-    expect(resultTemplate1?.updated_at).toBeInstanceOf(Date);
+    const firstTemplate = result.find(t => t.name === 'Template 1');
+    expect(firstTemplate).toBeDefined();
+    expect(firstTemplate!.template_content).toEqual('Test template content 1');
+    expect(firstTemplate!.openai_model).toEqual('gpt-4');
+    expect(firstTemplate!.trigger_type).toEqual('scheduled');
+    expect(firstTemplate!.schedule).toEqual({ frequency: 'daily' });
+    expect(firstTemplate!.webhook_url).toBeNull();
+    expect(firstTemplate!.destination_webhook_url).toEqual('https://example.com/webhook1');
+    expect(firstTemplate!.user_id).toEqual(userId);
+    expect(firstTemplate!.created_at).toBeInstanceOf(Date);
+    expect(firstTemplate!.updated_at).toBeInstanceOf(Date);
 
     // Check second template
-    const resultTemplate2 = result.find(t => t.name === 'Template 2');
-    expect(resultTemplate2).toBeDefined();
-    expect(resultTemplate2?.id).toBe(template2[0].id);
-    expect(resultTemplate2?.template_content).toBe('Content 2');
-    expect(resultTemplate2?.openai_model).toBe('gpt-4');
-    expect(resultTemplate2?.trigger_type).toBe('webhook');
-    expect(resultTemplate2?.schedule).toBeNull();
-    expect(resultTemplate2?.webhook_url).toBe('https://example.com/trigger');
-    expect(resultTemplate2?.destination_webhook_url).toBe('https://example.com/webhook2');
-    expect(resultTemplate2?.user_id).toBe(user.id);
-    expect(resultTemplate2?.created_at).toBeInstanceOf(Date);
-    expect(resultTemplate2?.updated_at).toBeInstanceOf(Date);
+    const secondTemplate = result.find(t => t.name === 'Template 2');
+    expect(secondTemplate).toBeDefined();
+    expect(secondTemplate!.template_content).toEqual('Test template content 2');
+    expect(secondTemplate!.openai_model).toEqual('gpt-3.5-turbo');
+    expect(secondTemplate!.trigger_type).toEqual('webhook');
+    expect(secondTemplate!.schedule).toBeNull();
+    expect(secondTemplate!.webhook_url).toEqual('https://example.com/trigger');
+    expect(secondTemplate!.destination_webhook_url).toEqual('https://example.com/webhook2');
+    expect(secondTemplate!.user_id).toEqual(userId);
   });
 
-  it('should only return templates belonging to the specified user', async () => {
-    // Create two users
-    const user1Result = await db.insert(usersTable)
+  it('should return empty array when user has no templates', async () => {
+    // Create test user
+    const testUser = await db.insert(usersTable)
+      .values({
+        email: 'test@example.com',
+        password_hash: 'hashedpassword123'
+      })
+      .returning()
+      .execute();
+
+    const input: GetPromptTemplatesByUserInput = {
+      user_id: testUser[0].id
+    };
+
+    const result = await getPromptTemplatesByUser(input);
+
+    expect(result).toHaveLength(0);
+    expect(result).toEqual([]);
+  });
+
+  it('should throw error when user does not exist', async () => {
+    const input: GetPromptTemplatesByUserInput = {
+      user_id: 999999 // Non-existent user ID
+    };
+
+    await expect(getPromptTemplatesByUser(input)).rejects.toThrow(/user not found/i);
+  });
+
+  it('should only return templates for the specified user', async () => {
+    // Create two test users
+    const user1 = await db.insert(usersTable)
       .values({
         email: 'user1@example.com',
-        password_hash: 'hashedpassword1'
+        password_hash: 'hashedpassword123'
       })
       .returning()
       .execute();
 
-    const user2Result = await db.insert(usersTable)
+    const user2 = await db.insert(usersTable)
       .values({
         email: 'user2@example.com',
-        password_hash: 'hashedpassword2'
+        password_hash: 'hashedpassword123'
       })
       .returning()
       .execute();
-
-    const user1 = user1Result[0];
-    const user2 = user2Result[0];
 
     // Create templates for both users
     await db.insert(promptTemplatesTable)
       .values({
         name: 'User 1 Template',
-        template_content: 'Content 1',
-        openai_model: 'gpt-3.5-turbo',
+        template_content: 'User 1 content',
+        openai_model: 'gpt-4',
         trigger_type: 'scheduled',
         schedule: { frequency: 'daily' },
         webhook_url: null,
         destination_webhook_url: 'https://example.com/webhook1',
-        user_id: user1.id
+        user_id: user1[0].id
       })
       .execute();
 
     await db.insert(promptTemplatesTable)
       .values({
         name: 'User 2 Template',
-        template_content: 'Content 2',
-        openai_model: 'gpt-4',
+        template_content: 'User 2 content',
+        openai_model: 'gpt-3.5-turbo',
         trigger_type: 'webhook',
         schedule: null,
         webhook_url: 'https://example.com/trigger',
         destination_webhook_url: 'https://example.com/webhook2',
-        user_id: user2.id
+        user_id: user2[0].id
       })
       .execute();
 
     const input: GetPromptTemplatesByUserInput = {
-      user_id: user1.id
+      user_id: user1[0].id
     };
 
     const result = await getPromptTemplatesByUser(input);
 
     expect(result).toHaveLength(1);
-    expect(result[0].name).toBe('User 1 Template');
-    expect(result[0].user_id).toBe(user1.id);
+    expect(result[0].name).toEqual('User 1 Template');
+    expect(result[0].user_id).toEqual(user1[0].id);
   });
 
-  it('should throw error for non-existent user', async () => {
+  it('should handle different schedule configurations correctly', async () => {
+    // Create test user
+    const testUser = await db.insert(usersTable)
+      .values({
+        email: 'test@example.com',
+        password_hash: 'hashedpassword123'
+      })
+      .returning()
+      .execute();
+
+    const userId = testUser[0].id;
+
+    // Create templates with different schedule configurations
+    await db.insert(promptTemplatesTable)
+      .values({
+        name: 'Hourly Template',
+        template_content: 'Hourly content',
+        openai_model: 'gpt-4',
+        trigger_type: 'scheduled',
+        schedule: { frequency: 'hourly' },
+        webhook_url: null,
+        destination_webhook_url: 'https://example.com/webhook1',
+        user_id: userId
+      })
+      .execute();
+
+    await db.insert(promptTemplatesTable)
+      .values({
+        name: 'Weekly Template',
+        template_content: 'Weekly content',
+        openai_model: 'gpt-4',
+        trigger_type: 'scheduled',
+        schedule: { frequency: 'weekly' },
+        webhook_url: null,
+        destination_webhook_url: 'https://example.com/webhook2',
+        user_id: userId
+      })
+      .execute();
+
     const input: GetPromptTemplatesByUserInput = {
-      user_id: 999999
+      user_id: userId
     };
 
-    await expect(getPromptTemplatesByUser(input)).rejects.toThrow(/user not found/i);
+    const result = await getPromptTemplatesByUser(input);
+
+    expect(result).toHaveLength(2);
+    
+    const hourlyTemplate = result.find(t => t.name === 'Hourly Template');
+    expect(hourlyTemplate!.schedule).toEqual({ frequency: 'hourly' });
+    
+    const weeklyTemplate = result.find(t => t.name === 'Weekly Template');
+    expect(weeklyTemplate!.schedule).toEqual({ frequency: 'weekly' });
   });
 });
