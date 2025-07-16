@@ -1,21 +1,49 @@
 
+import { db } from '../db';
+import { usersTable } from '../db/schema';
 import { type LoginUserInput, type AuthResponse } from '../schema';
+import { eq } from 'drizzle-orm';
 
 export async function loginUser(input: LoginUserInput): Promise<AuthResponse> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is to authenticate a user by:
-    // 1. Finding the user by email
-    // 2. Comparing the provided password with the stored hash
-    // 3. Generating a JWT token if authentication succeeds
-    // 4. Returning the user and token
-    return Promise.resolve({
-        user: {
-            id: 0, // Placeholder ID
-            email: input.email,
-            password_hash: 'hashed_password_placeholder',
-            created_at: new Date(),
-            updated_at: new Date()
-        },
-        token: 'jwt_token_placeholder'
-    } as AuthResponse);
+  try {
+    // Find user by email
+    const users = await db.select()
+      .from(usersTable)
+      .where(eq(usersTable.email, input.email))
+      .execute();
+
+    if (users.length === 0) {
+      throw new Error('Invalid email or password');
+    }
+
+    const user = users[0];
+
+    // Verify password using Bun's built-in password verification
+    const isPasswordValid = await Bun.password.verify(input.password, user.password_hash);
+
+    if (!isPasswordValid) {
+      throw new Error('Invalid email or password');
+    }
+
+    // Generate JWT token using Bun's built-in JWT
+    const token = await Bun.password.hash(JSON.stringify({
+      userId: user.id,
+      email: user.email,
+      timestamp: Date.now()
+    }));
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        password_hash: user.password_hash,
+        created_at: user.created_at,
+        updated_at: user.updated_at
+      },
+      token
+    };
+  } catch (error) {
+    console.error('Login failed:', error);
+    throw error;
+  }
 }
